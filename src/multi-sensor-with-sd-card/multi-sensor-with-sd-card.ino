@@ -1,358 +1,278 @@
-#include <GravityTDS.h>
-//#include <ArduinoLowPower.h>
+// Libraries for DHT
+#include "dht.h"
 
-#include <EEPROM.h>
-#include <Wire.h> 
+//Libraries for RTC DS1302
+//#include <ThreeWire.h>  
+//#include <RtcDS1302.h>
+#include <Time.h>
+
+// DHT11
+#define dht_apin A3
+dht DHT;
+
+// Temp DS18B20
 #include <OneWire.h>
 #include <DallasTemperature.h>
-#include <SPI.h>
-#include "DHT.h"
-
-#include <ThreeWire.h>  
-#include <RtcDS1302.h>
-
-#include <SPI.h>
-#include <SD.h>
-
-//****RTC****
-ThreeWire myWire(4, 5, 3); // IO, SCLK, CE
-RtcDS1302<ThreeWire> Rtc(myWire);
-#define countof(a) (sizeof(a) / sizeof(a[0]))
-String curr_time;
-//****RTC end****
-
-//****TDS****
-#define tds A1
-GravityTDS gravityTds;
-float tds_temp = 25, tds_val = 0;
-//****TDS end****
-
-//****Turbidity****
-int turb_pin = A0;
-float volt;
-float turb_val;
-//****Turbudity end****
-
-//****Temperature****
 #define ONE_WIRE_BUS 6
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
-float temp_celc=0;
-float temp_fahr=0;
-//****Temperature end****
 
-//****pH****
-int ph_pin = A2;
-float calibration_value = 0;
-unsigned long int avgval;
-int buffer_arr[20], temp;
-float ph_val = 0;
-//****pH end****
+// RTC DS1302v2
+#include <RTClib.h>
+//   DS1302 rtc(ce_pin, sck_pin, io_pin);
+DS1302 rtc(3, 5, 4);
 
-//****DHT****
-#define DHTPIN A3// Digital pin connected to the DHT sensor
-#define DHTTYPE DHT11   // DHT 11
-//#define DHTTYPE DHT22   // DHT 22  (AM2302), AM2321
-//#define DHTTYPE DHT21   // DHT 21 (AM2301)
+// TDS SEN 0224
+#define TdsSensorPin A1
+#define VREF 5.0                  // analog reference voltage(Volt) of the ADC
+#define SCOUNT  20                // sum of sample point
+int analogBuffer[SCOUNT];         // store the analog value in the array, read from ADC
+int analogBufferTemp[SCOUNT];
+int analogBufferIndex = 0,copyIndex = 0;
+float averageVoltage = 0,tdsValue = 0,temperature = 25;
 
-DHT dht(DHTPIN, DHTTYPE);
+// I2C Display
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+LiquidCrystal_I2C lcd(0x20,16,2);  // set the LCD address to 0x20 for a 16 chars and 2 line display
 
-float dht_hum = 0;
-float dht_celc = 0;
-float dht_fahr = 0;
-float dht_hic = 0;
-float dht_hif = 0;
-//****DHT end****
+// PH SEN0169
+#define SensorPin A2                //pH meter Analog output to Arduino Analog Input 0
+#define Offset 0.00                 //deviation compensate
+#define LED 13
+#define ArrayLenth  20              //times of collection
+int pHArray[ArrayLenth];            //Store the average value of the sensor feedback
+int pHArrayIndex=0;
 
-//****SD Card****
-File myFile;
-char fname[15];
-//String fname;
-//****end SD Card****
+// SD Card MODULE
+#include <SPI.h>
+#include <SD.h>
 
-void setup()
-{
+//GLOBAL TIMER VARIABLES
+unsigned long timerOne = 0;
+unsigned long timerTwo = 0;
+unsigned long reportingTimer = 0;
+unsigned long writingTimer = 0;
+String targetFileName = "";
 
-  while (!Serial);
-  Serial.begin(9600);
-  delay(100);
-
-  SD.begin(10);
-  rtc_init();
-
-  Serial.println("==== SLICE Node 1 ====");
-
-  gravityTds.setPin(tds);
-  gravityTds.setAref(5.0);  //reference voltage on ADC, default 5.0V on Arduino UNO
-  gravityTds.setAdcRange(1024);  //1024 for 10bit ADC;4096 for 12bit ADC
-  gravityTds.begin();  //initialization
-
-  dht.begin();
-  Serial.println("begin test");
-}
-
-int16_t packetnum = 0;  // packet counter, we increment per transmission
- 
-void loop()
-{
-  int int_temp, int_ph;
-  long int_turb, int_tds;
+void setup() {
+  // put your setup code here, to run once:
   
-  int pos = 0;
-  byte b1, b2, b3;
-  byte loraMsg[10];
+  Serial.begin(250000);
 
-  int global_reading_delay = 5000;
-  Serial.println("Collecting data...");
+  lcd.init();
+  lcd.backlight();
+  lcd.print("SLICE v3.0 Init...");
 
-  RtcDateTime now = Rtc.GetDateTime();
-
-    printDateTime(now);
-    Serial.println();
-
-    if (!now.IsValid())
-    {
-//         Common Causes:
-//            1) the battery on the device is low or even missing and the power line was disconnected
-        Serial.println("RTC lost confidence in the DateTime!");
-    }
-
-  
-  delay(global_reading_delay);
-  now = Rtc.GetDateTime();
-  printDateTime(now);
-  dht_class();
-  Serial.println("Printing to file ");
-  myFile = SD.open("insitu.txt", FILE_WRITE);
-  myFile.print(curr_time);
-  myFile.print(" - Humidity: ");
-  myFile.print(dht_hum);
-  myFile.print(", Temperature (C): ");
-  myFile.print(dht_celc);
-  myFile.print(", Temperature (F): ");
-  myFile.print(dht_fahr);
-  myFile.print(", Heat Index (C): ");
-  myFile.print(dht_hic);
-  myFile.print(", Heat Index (F): ");
-  myFile.println(dht_hif);
-  
-//  myFile = SD.open(String(fname));
-//  Serial.println(fname);
-//  // read from the file until the line ends
-//  String data = myFile.readString();
-//  Serial.println(data);
-//  // close the file:
-//  myFile.close();
-
-  delay(global_reading_delay);
-  
-  now = Rtc.GetDateTime();
-  printDateTime(now);
-  
-  temp_class();
-  myFile.println(curr_time);
-  myFile.print(" - Water Temperature: ");
-  myFile.println(temp_celc);
-  
-  Serial.print("Water Temperature: ");
-  Serial.println(temp_celc);
-//  
-  delay(global_reading_delay);
-  
-  now = Rtc.GetDateTime();
-  printDateTime(now);
-  
-  turb_class();
-  myFile.print(curr_time);
-  myFile.print(" - Turbidity: ");
-  myFile.println(turb_val);
-
-  Serial.print("Turbidity: ");
-  Serial.println(turb_val);
-  
-  delay(global_reading_delay);
-  
-  now = Rtc.GetDateTime();
-  printDateTime(now);
-  
-  tds_class();
-  myFile.print(curr_time);
-  myFile.print(" - TDS: ");
-  myFile.println(tds_val);
-
-  Serial.print("TDS: ");
-  Serial.println(tds_val);
-  
-  delay(global_reading_delay);
-   
-  now = Rtc.GetDateTime();
-  printDateTime(now);
-  
-  ph_class();
-  myFile.print(curr_time);
-  myFile.print(" - pH: ");
-  myFile.println(ph_val);
-  myFile.println();
-  Serial.print("pH: ");
-  Serial.println(ph_val);
-
-  myFile.close();
-  
-  delay(global_reading_delay);
-}
-
-void rtc_init(){
-    Serial.print("compiled: ");
-    Serial.print(__DATE__);
-    Serial.println(__TIME__);
-
-    Rtc.Begin();
-
-    RtcDateTime compiled = RtcDateTime(__DATE__, __TIME__);
-    printDateTime(compiled);
-    Serial.println();
-
-    if (!Rtc.IsDateTimeValid()) 
-    {
-        // Common Causes:
-        //    1) first time you ran and the device wasn't running yet
-        //    2) the battery on the device is low or even missing
-
-        Serial.println("RTC lost confidence in the DateTime!");
-        Rtc.SetDateTime(compiled);
-    }
-
-    if (Rtc.GetIsWriteProtected())
-    {
-        Serial.println("RTC was write protected, enabling writing now");
-        Rtc.SetIsWriteProtected(false);
-    }
-
-    if (!Rtc.GetIsRunning())
-    {
-        Serial.println("RTC was not actively running, starting now");
-        Rtc.SetIsRunning(true);
-    }
-
-    RtcDateTime now = Rtc.GetDateTime();
-    if (now < compiled) 
-    {
-        Serial.println("RTC is older than compile time!  (Updating DateTime)");
-        Rtc.SetDateTime(compiled);
-    }
-    else if (now > compiled) 
-    {
-        Serial.println("RTC is newer than compile time. (this is expected)");
-    }
-    else if (now == compiled) 
-    {
-        Serial.println("RTC is the same as compile time! (not expected but all is fine)");
-    }
-}
-
-void temp_class(){
-  sensors.requestTemperatures(); 
-  temp_celc=sensors.getTempCByIndex(0);
-  temp_fahr=sensors.toFahrenheit(temp_celc);
-}
-
-void turb_class(){
-    volt = 0;
-    for(int i=0; i<800; i++)
-    {
-        volt += ((float)analogRead(turb_pin)/1024)*5;
-    }
-    volt = volt/800;
-    volt = round_to_dp(volt,2);
-//    Serial.print("Turbidity volt: ");
-//    Serial.print(volt);
-    if(volt < 2.5){
-      turb_val = 3000;
-    }else{
-      turb_val = -1120.4*square(volt)+5742.3*volt-4352.9; 
-    }
-}
-
-void tds_class(){
-    gravityTds.setTemperature(tds_temp);  // set the temperature and execute temperature compensation
-    gravityTds.update();  //sample and calculate
-    tds_val = gravityTds.getTdsValue();  // then get the value
-}
-
-void ph_class(){
-  for(int i=0; i<20; i++){
-    buffer_arr[i] = analogRead(ph_pin);
-    delay(20);
+  while(!Serial){
+    
   }
-  for(int i=0; i<19; i++){
-    for(int j=i+1; j<20; j++){
-      if(buffer_arr[i] > buffer_arr[j]){
-        temp = buffer_arr[i];
-        buffer_arr[i] = buffer_arr[j];
-        buffer_arr[j] = temp;
+  pinMode(TdsSensorPin,INPUT);
+  pinMode(LED, OUTPUT);
+  lcd.setCursor(0,0);
+  lcd.print("SD check");
+  lcd.setCursor(0,1);
+  if(!SD.begin(10)){
+    lcd.print("Failed!");
+//    while(1);
+  }else{
+      lcd.print("Success!");
+  }
+  
+  { //move this subrouting for opening the file as necessary
+  }
+//  delay(1000);
+  Serial.print("Compiled: ");
+  Serial.print(__DATE__);
+  Serial.println(__TIME__);
+  delay(1000);
+
+  rtc.begin();
+  if(!rtc.isrunning()){
+    Serial.println("RTC is NOT running!");
+    rtc.adjust(DateTime(__DATE__, __TIME__));
+  }
+
+    DateTime now = rtc.now();
+  {     //routine to create new chuvaness
+        targetFileName = String(now.month())+"-"+String(now.day())+".txt";
+        Serial.print("Checking if file ");
+        Serial.print(targetFileName);
+        Serial.print(" exists-");
+               
+        if(!SD.exists(targetFileName)){
+          Serial.print("negative-");
+          Serial.print("creating.");
+  
+          File myFile = SD.open(targetFileName, FILE_WRITE);
+          if(myFile){
+            myFile.println("UNIX, HUM(%), TEMP(C), TDS(ppm), pH");
+            myFile.close();
+            Serial.print("created.");
+          }else{
+            Serial.print("failed.");
+          }
+        }else{
+          Serial.print("positive.");    
+        }
+        Serial.println();
+  }
+    delay(1000);
+}
+
+void loop () 
+{
+    unsigned long intervalOne = 20U;
+    unsigned long intervalTwo = 1000U;
+    unsigned long reportingInterval = intervalTwo;
+    unsigned long writingInterval  = reportingInterval * 5; 
+    unsigned int currentTime = millis();
+
+    static float pHValue, pHVoltage;
+
+    if(currentTime - timerOne > 20U){
+      timerOne = currentTime;
+
+      { // TDS Sampling
+        analogBuffer[analogBufferIndex] = analogRead(TdsSensorPin);    //read the analog value and store into the buffer
+        analogBufferIndex++;
+        if(analogBufferIndex == SCOUNT){
+          analogBufferIndex = 0;
+        }
+      }
+
+      { //pH Sampling
+        pHArray[pHArrayIndex++] = analogRead(SensorPin);
+        if(pHArrayIndex==ArrayLenth){
+          pHArrayIndex=0;
+        }
+      }
+    }
+    
+    if(currentTime - timerTwo >= 1000U){
+      timerTwo = currentTime;
+      // Temperature
+      sensors.requestTemperatures(); 
+      temperature=sensors.getTempCByIndex(0);
+      { // TDS Central  Calculation
+        for(copyIndex=0;copyIndex<SCOUNT;copyIndex++){
+          analogBufferTemp[copyIndex]= analogBuffer[copyIndex];
+        }
+        averageVoltage = getMedianNum(analogBufferTemp,SCOUNT) * (float)VREF / 1024.0;  // read the analog value more stable by the median filtering algorithm, and convert to voltage value
+        float compensationCoefficient=1.0+0.02*(temperature-25.0);                      //temperature compensation formula: fFinalResult(25^C) = fFinalResult(current)/(1.0+0.02*(fTP-25.0));
+        float compensationVoltage=averageVoltage/compensationCoefficient;               //temperature compensation
+        tdsValue=(133.42*compensationVoltage*compensationVoltage*compensationVoltage - 255.86*compensationVoltage*compensationVoltage + 857.39*compensationVoltage)*0.5; //convert voltage value to tds value
+      
+      }
+
+      { // pH Central Calculation 
+        pHVoltage = avergearray(pHArray, ArrayLenth)*5.0/1024;
+        pHValue = 3.5*pHVoltage+Offset;
+      }
+    }
+    
+    if(currentTime - reportingTimer >= reportingInterval){
+      reportingTimer = currentTime;
+        char LCDString1[16] = {0};
+        String LCDString = "";
+
+      DHT.read11(dht_apin);
+      lcd.clear();
+//      lcd.setCursor(0,0);
+      LCDString = LCDString + DHT.temperature + ":"+ DHT.humidity +":"+pHValue;
+      LCDString.toCharArray(LCDString1, 16);
+      lcd.print(LCDString1);
+
+      LCDString = "";
+      LCDString = LCDString + tdsValue +":"+pHVoltage+":"+temp_celc;
+      LCDString.toCharArray(LCDString1, 16);
+      lcd.setCursor(0,1);
+      lcd.print(LCDString1);      
+  }
+
+  if(currentTime - writingTimer >= writingInterval){
+    writingTimer = currentTime;
+    DateTime now = rtc.now();
+
+
+    String SDString = "";
+    SDString = SDString + now.unixtime() + ',' + DHT.humidity + ',' + DHT.temperature + ',' + tdsValue + ',' +pHValue;
+
+    Serial.println(SDString);
+    {
+      File myFile = SD.open(targetFileName, FILE_WRITE);
+      if(myFile){
+        myFile.println(SDString);
+        myFile.close();
+      }else{
+        Serial.println("failed to write.");
       }
     }
   }
-  avgval = 0;
-  for(int i=2; i<18; i++){
-    avgval += buffer_arr[i];
+}
+
+
+int getMedianNum(int bArray[], int iFilterLen) 
+{
+      int bTab[iFilterLen];
+      for (byte i = 0; i<iFilterLen; i++)
+      bTab[i] = bArray[i];
+      int i, j, bTemp;
+      for (j = 0; j < iFilterLen - 1; j++) 
+      {
+      for (i = 0; i < iFilterLen - j - 1; i++) 
+          {
+        if (bTab[i] > bTab[i + 1]) 
+            {
+        bTemp = bTab[i];
+            bTab[i] = bTab[i + 1];
+        bTab[i + 1] = bTemp;
+         }
+      }
+      }
+      if ((iFilterLen & 1) > 0)
+    bTemp = bTab[(iFilterLen - 1) / 2];
+      else
+    bTemp = (bTab[iFilterLen / 2] + bTab[iFilterLen / 2 - 1]) / 2;
+      return bTemp;
+}
+
+double avergearray(int* arr, int number){
+  int i;
+  int max,min;
+  double avg;
+  long amount=0;
+  if(number<=0){
+    Serial.println("Error number for the array to avraging!/n");
+    return 0;
   }
-  float volt = (float)avgval * 5.0 / 1024 / 16;
-  ph_val = 3.5 * volt + calibration_value;
-}
-
-void dht_class(){
-  // Reading temperature or humidity takes about 250 milliseconds!
-  // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
-  dht_hum = dht.readHumidity();
-  // Read temperature as Celsius (the default)
-  dht_celc = dht.readTemperature();
-  // Read temperature as Fahrenheit (isFahrenheit = true)
-  dht_fahr = dht.readTemperature(true);
-
-  // Compute heat index in Fahrenheit (the default)
-  dht_hif = dht.computeHeatIndex(dht_fahr, dht_hum);
-  // Compute heat index in Celsius (isFahreheit = false)
-  dht_hic = dht.computeHeatIndex(dht_celc, dht_hum, false);
-}
-
-float round_to_dp( float in_value, int decimal_place )
-{
-  float multiplier = powf( 10.0f, decimal_place );
-  in_value = roundf( in_value * multiplier ) / multiplier;
-  return in_value;
-}
-
-//void setFileName(const RtcDateTime& dt){
-////    char datestring[15];
-//
-//    snprintf_P(fname, 
-//            countof(fname),
-//            PSTR("%02u-%02u-%04u.txt"),
-//            dt.Month(),
-//            dt.Day(),
-//            dt.Year()
-//            );
-////    fname = datestring;
-//
-////    snprintf_P(fname, countof(fname), datestring);
-//    Serial.println(fname);
-//}
-
-void printDateTime(const RtcDateTime& dt)
-{
-    char datestring[20];
-
-    snprintf_P(datestring, 
-            countof(datestring),
-            PSTR("%02u/%02u/%04u %02u:%02u:%02u"),
-            dt.Month(),
-            dt.Day(),
-            dt.Year(),
-            dt.Hour(),
-            dt.Minute(),
-            dt.Second() );
-//    Serial.print(datestring);
-    curr_time = datestring;
-    
+  if(number<5){   //less than 5, calculated directly statistics
+    for(i=0;i<number;i++){
+      amount+=arr[i];
+    }
+    avg = amount/number;
+    return avg;
+  }else{
+    if(arr[0]<arr[1]){
+      min = arr[0];max=arr[1];
+    }
+    else{
+      min=arr[1];max=arr[0];
+    }
+    for(i=2;i<number;i++){
+      if(arr[i]<min){
+        amount+=min;        //arr<min
+        min=arr[i];
+      }else {
+        if(arr[i]>max){
+          amount+=max;    //arr>max
+          max=arr[i];
+        }else{
+          amount+=arr[i]; //min<=arr<=max
+        }
+      }//if
+    }//for
+    avg = (double)amount/(number-2);
+  }//if
+  return avg;
 }
