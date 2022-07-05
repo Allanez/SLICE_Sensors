@@ -29,7 +29,7 @@ DS1302 rtc(3, 5, 4);
 int analogBuffer[SCOUNT];         // store the analog value in the array, read from ADC
 int analogBufferTemp[SCOUNT];
 int analogBufferIndex = 0,copyIndex = 0;
-float averageVoltage = 0,tdsValue = 0,temperature = 25;
+float averageVoltage = 0,tdsValue = 0,temperature = 25, rawtds = 0;
 
 // I2C Display
 #include <Wire.h>
@@ -155,14 +155,8 @@ void loop ()
       sensors.requestTemperatures(); 
       temperature=sensors.getTempCByIndex(0);
       { // TDS Central  Calculation
-        for(copyIndex=0;copyIndex<SCOUNT;copyIndex++){
-          analogBufferTemp[copyIndex]= analogBuffer[copyIndex];
-        }
-        averageVoltage = getMedianNum(analogBufferTemp,SCOUNT) * (float)VREF / 1024.0;  // read the analog value more stable by the median filtering algorithm, and convert to voltage value
-        float compensationCoefficient=1.0+0.02*(temperature-25.0);                      //temperature compensation formula: fFinalResult(25^C) = fFinalResult(current)/(1.0+0.02*(fTP-25.0));
-        float compensationVoltage=averageVoltage/compensationCoefficient;               //temperature compensation
-        tdsValue=(133.42*compensationVoltage*compensationVoltage*compensationVoltage - 255.86*compensationVoltage*compensationVoltage + 857.39*compensationVoltage)*0.5; //convert voltage value to tds value
-      
+        tdsValue = calculateTDS(temperature);
+        rawtds = calculateTDS(25);
       }
 
       { // pH Central Calculation 
@@ -184,7 +178,7 @@ void loop ()
       lcd.print(LCDString1);
 
       LCDString = "";
-      LCDString = LCDString + tdsValue +":"+pHVoltage+":"+temp_celc;
+      LCDString = LCDString + tdsValue +":"+pHVoltage+":"+temperature;
       LCDString.toCharArray(LCDString1, 16);
       lcd.setCursor(0,1);
       lcd.print(LCDString1);      
@@ -196,7 +190,7 @@ void loop ()
 
 
     String SDString = "";
-    SDString = SDString + now.unixtime() + ',' + DHT.humidity + ',' + DHT.temperature + ',' + tdsValue + ',' +pHValue;
+    SDString = SDString + now.unixtime() + ',' + DHT.humidity + ',' + DHT.temperature + ',' +pHValue + ',' + tdsValue + ',' + rawtds + ',' + temperature;
 
     Serial.println(SDString);
     {
@@ -211,6 +205,17 @@ void loop ()
   }
 }
 
+float calculateTDS(float temp){
+  float tds = 0;
+  for(copyIndex=0;copyIndex<SCOUNT;copyIndex++){
+    analogBufferTemp[copyIndex]= analogBuffer[copyIndex];
+  }
+  averageVoltage = getMedianNum(analogBufferTemp,SCOUNT) * (float)VREF / 1024.0;  // read the analog value more stable by the median filtering algorithm, and convert to voltage value
+  float compensationCoefficient=1.0+0.02*(temp-25.0);                      //temperature compensation formula: fFinalResult(25^C) = fFinalResult(current)/(1.0+0.02*(fTP-25.0));
+  float compensationVoltage=averageVoltage/compensationCoefficient;               //temperature compensation
+  tds=(133.42*compensationVoltage*compensationVoltage*compensationVoltage - 255.86*compensationVoltage*compensationVoltage + 857.39*compensationVoltage)*0.5; //convert voltage value to tds value
+  return tds;
+}
 
 int getMedianNum(int bArray[], int iFilterLen) 
 {
