@@ -24,33 +24,43 @@ void setup() {
 
 void loop()
 {
-  sendTabData("AT+CGNSINF",1000,DEBUG);
-  if (state !=0) {
-    Serial.println("State  :"+state);
-    Serial.println("Time  :"+timegps);
-    Serial.println("Latitude  :"+latitude);
-    Serial.println("Longitude  :"+longitude);
+  if(Serial.available()){
+    String data_rcvd = Serial.readString();
+    sendTabData("AT+CGNSINF",1000,DEBUG);
+//    Serial.println("Serial data received!");
+    if (state !=0) {
+      
+//      Serial.println("State  :"+state);
+//      Serial.println("Time  :"+timegps);
+//      Serial.println("Latitude  :"+latitude);
+//      Serial.println("Longitude  :"+longitude);
+//  
+      sim808.print("AT+CMGS=\"");
+      sim808.print(phone_no);
+      sim808.println("\"");
+      
+      delay(300);
 
-    sim808.print("AT+CMGS=\"");
-    sim808.print(phone_no);
-    sim808.println("\"");
-    
-    delay(300);
+      sim808.print("data: ");
+      sim808.println(data_rcvd);
+      sim808.print("http://maps.google.com/maps?q=loc:");
+      sim808.print(latitude);
+      sim808.print(",");
+      sim808.print(longitude);
 
-    sim808.print("http://maps.google.com/maps?q=loc:");
-    sim808.print(latitude);
-    sim808.print(",");
-    sim808.print (longitude);
-    delay(200);
-    sim808.println((char)26); // End AT command with a ^Z, ASCII code 26
-    delay(200);
-    sim808.println();
-    delay(20000);
-    sim808.flush();
-    
+      delay(200);
+      sim808.println((char)26); // End AT command with a ^Z, ASCII code 26
+      delay(200);
+      sim808.println();
+  //    delay(20000);
+      sim808.flush();
+      
+    } else {
+//      Serial.println("GPS Initialising...");
+    }  
   } else {
-    Serial.println("GPS Initialising...");
-  }  
+//    Serial.println("No serial detected!");
+  }
 }
 
 void sendTabData(String command , const int timeout , boolean debug){
@@ -95,7 +105,7 @@ String sendData (String command , const int timeout ,boolean debug){
     }
   }
   if (debug) {
-     Serial.print(response);
+//     Serial.print(response);
      }
      return response;
 }
