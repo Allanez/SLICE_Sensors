@@ -106,7 +106,7 @@ void setup() {
   
           File myFile = SD.open(targetFileName, FILE_WRITE);
           if(myFile){
-            myFile.println("UNIX, HUM(%), TEMP(C), TDS(ppm), pH");
+            myFile.println("UNIX, DHT_HUM(%), DHT_TEMP(C), pH, TDS(ppm), TDS_RAW(ppm), TEMP(C)");
             myFile.close();
             Serial.print("created.");
           }else{
