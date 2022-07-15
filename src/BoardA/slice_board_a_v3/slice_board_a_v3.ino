@@ -10,6 +10,15 @@
 #define dht_apin A3
 dht DHT;
 
+// TDS SEN 0224
+#define TdsSensorPin A1
+#define VREF 5.0                  // analog reference voltage(Volt) of the ADC
+#define SCOUNT  20                // sum of sample point
+int analogBuffer[SCOUNT];         // store the analog value in the array, read from ADC
+int analogBufferTemp[SCOUNT];
+int analogBufferIndex = 0,copyIndex = 0;
+float averageVoltage = 0,tdsValue = 0,temperature = 25, rawtds = 0;
+
 // Temp DS18B20
 #include <OneWire.h>
 #include <DallasTemperature.h>
@@ -22,27 +31,16 @@ DallasTemperature sensors(&oneWire);
 //   DS1302 rtc(ce_pin, sck_pin, io_pin);
 DS1302 rtc(3, 5, 4);
 
-// TDS SEN 0224
-#define TdsSensorPin A1
-#define VREF 5.0                  // analog reference voltage(Volt) of the ADC
-#define SCOUNT  20                // sum of sample point
-int analogBuffer[SCOUNT];         // store the analog value in the array, read from ADC
-int analogBufferTemp[SCOUNT];
-int analogBufferIndex = 0,copyIndex = 0;
-float averageVoltage = 0,tdsValue = 0,temperature = 25, rawtds = 0;
-
 // I2C Display
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 LiquidCrystal_I2C lcd(0x20,16,2);  // set the LCD address to 0x20 for a 16 chars and 2 line display
 
 // PH SEN0169
-#define SensorPin A2                //pH meter Analog output to Arduino Analog Input 0
-#define Offset 0.00                 //deviation compensate
-#define LED 13
-#define ArrayLenth  20              //times of collection
-int pHArray[ArrayLenth];            //Store the average value of the sensor feedback
-int pHArrayIndex=0;
+#define PH_PIN A2            //pH meter Analog output to Arduino Analog Input 0
+#include "DFRobot_PH.h"
+#include <EEPROM.h>
+DFRobot_PH ph;
 
 // SD Card MODULE
 #include <SPI.h>
@@ -68,7 +66,7 @@ void setup() {
     
   }
   pinMode(TdsSensorPin,INPUT);
-  pinMode(LED, OUTPUT);
+  pinMode(13, OUTPUT);
   lcd.setCursor(0,0);
   lcd.print("SD check");
   lcd.setCursor(0,1);
@@ -88,10 +86,7 @@ void setup() {
   delay(1000);
 
   rtc.begin();
-  if(!rtc.isrunning()){
-//    Serial.println("RTC is NOT running!");
-    rtc.adjust(DateTime(__DATE__, __TIME__));
-  }
+  rtc.adjust(DateTime(__DATE__, __TIME__));
 
     DateTime now = rtc.now();
   {     //routine to create new chuvaness
@@ -117,7 +112,8 @@ void setup() {
         }
 //        Serial.println();
   }
-    delay(1000);
+  ph.begin();
+  delay(1000);
 }
 
 void loop () 
@@ -140,13 +136,6 @@ void loop ()
           analogBufferIndex = 0;
         }
       }
-
-      { //pH Sampling
-        pHArray[pHArrayIndex++] = analogRead(SensorPin);
-        if(pHArrayIndex==ArrayLenth){
-          pHArrayIndex=0;
-        }
-      }
     }
     
     if(currentTime - timerTwo >= 1000U){
@@ -154,14 +143,11 @@ void loop ()
       // Temperature
       sensors.requestTemperatures(); 
       temperature=sensors.getTempCByIndex(0);
+      pHVoltage = analogRead(PH_PIN)/1024.0*5000;  // read the voltage
+      pHValue = ph.readPH(pHVoltage,temperature);  // convert voltage to pH with temperature compensation
       { // TDS Central  Calculation
         tdsValue = calculateTDS(temperature);
         rawtds = calculateTDS(25);
-      }
-
-      { // pH Central Calculation 
-        pHVoltage = avergearray(pHArray, ArrayLenth)*5.0/1024;
-        pHValue = 3.5*pHVoltage+Offset;
       }
     }
     
@@ -178,7 +164,7 @@ void loop ()
       lcd.print(LCDString1);
 
       LCDString = "";
-      LCDString = LCDString + tdsValue +":"+pHVoltage+":"+temperature;
+      LCDString = LCDString + tdsValue +":"+(pHVoltage/1000)+":"+temperature;
       LCDString.toCharArray(LCDString1, 16);
       lcd.setCursor(0,1);
       lcd.print(LCDString1);      

@@ -27,13 +27,14 @@ void loop()
   if(Serial.available()){
     String data_rcvd = Serial.readString();
     sendTabData("AT+CGNSINF",1000,DEBUG);
-//    Serial.println("Serial data received!");
+    Serial.println("Serial data received!");
     if (state !=0) {
       
-//      Serial.println("State  :"+state);
-//      Serial.println("Time  :"+timegps);
-//      Serial.println("Latitude  :"+latitude);
-//      Serial.println("Longitude  :"+longitude);
+      Serial.println("State  :"+state);
+      Serial.println("Time  :"+timegps);
+      Serial.println("Latitude  :"+latitude);
+      Serial.println("Longitude  :"+longitude);
+      Serial.println("Data  :"+data_rcvd);
 //  
       sim808.print("AT+CMGS=\"");
       sim808.print(phone_no);
@@ -52,11 +53,12 @@ void loop()
       sim808.println((char)26); // End AT command with a ^Z, ASCII code 26
       delay(200);
       sim808.println();
-  //    delay(20000);
+//      delay(1000);
+      delay(20000);
       sim808.flush();
       
     } else {
-//      Serial.println("GPS Initialising...");
+      Serial.println("GPS Initialising...");
     }  
   } else {
 //    Serial.println("No serial detected!");
@@ -64,8 +66,9 @@ void loop()
 }
 
 void sendTabData(String command , const int timeout , boolean debug){
-
+  sim808.flush();
   sim808.println(command);
+  Serial.println("--------Command  : " + command);
   long int time = millis();
   int i = 0;
 
@@ -90,11 +93,18 @@ void sendTabData(String command , const int timeout , boolean debug){
     latitude = data[3];
     longitude =data[4];  
   }
+  Serial.println("---DATA LOG---");
+  for (int i = 0; i < 5; i++){
+    Serial.println(data[i]);
+  }
+  Serial.println("---END DATA LOG---");
 }
 
 String sendData (String command , const int timeout ,boolean debug){
   String response = "";
+  sim808.flush();
   sim808.println(command);
+  Serial.println("--------Command send  : " + command);
   long int time = millis();
   int i = 0;
 

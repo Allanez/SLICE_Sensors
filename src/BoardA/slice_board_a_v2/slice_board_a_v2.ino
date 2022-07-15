@@ -58,7 +58,7 @@ String targetFileName = "";
 void setup() {
   // put your setup code here, to run once:
   
-  Serial.begin(9600);
+  Serial.begin(250000);
 
   lcd.init();
   lcd.backlight();
@@ -82,40 +82,40 @@ void setup() {
   { //move this subrouting for opening the file as necessary
   }
 //  delay(1000);
-//  Serial.print("Compiled: ");
-//  Serial.print(__DATE__);
-//  Serial.println(__TIME__);
+  Serial.print("Compiled: ");
+  Serial.print(__DATE__);
+  Serial.println(__TIME__);
   delay(1000);
 
   rtc.begin();
   if(!rtc.isrunning()){
-//    Serial.println("RTC is NOT running!");
+    Serial.println("RTC is NOT running!");
     rtc.adjust(DateTime(__DATE__, __TIME__));
   }
 
     DateTime now = rtc.now();
   {     //routine to create new chuvaness
         targetFileName = String(now.month())+"-"+String(now.day())+".txt";
-//        Serial.print("Checking if file ");
-//        Serial.print(targetFileName);
-//        Serial.print(" exists-");
+        Serial.print("Checking if file ");
+        Serial.print(targetFileName);
+        Serial.print(" exists-");
                
         if(!SD.exists(targetFileName)){
-//          Serial.print("negative-");
-//          Serial.print("creating.");
+          Serial.print("negative-");
+          Serial.print("creating.");
   
           File myFile = SD.open(targetFileName, FILE_WRITE);
           if(myFile){
             myFile.println("UNIX, DHT_HUM(%), DHT_TEMP(C), pH, TDS(ppm), TDS_RAW(ppm), TEMP(C)");
             myFile.close();
-//            Serial.print("created.");
+            Serial.print("created.");
           }else{
-//            Serial.print("failed.");
+            Serial.print("failed.");
           }
         }else{
-//          Serial.print("positive.");    
+          Serial.print("positive.");    
         }
-//        Serial.println();
+        Serial.println();
   }
     delay(1000);
 }
@@ -192,14 +192,14 @@ void loop ()
     String SDString = "";
     SDString = SDString + now.unixtime() + ',' + DHT.humidity + ',' + DHT.temperature + ',' +pHValue + ',' + tdsValue + ',' + rawtds + ',' + temperature;
 
-    Serial.print(SDString);
+    Serial.println(SDString);
     {
       File myFile = SD.open(targetFileName, FILE_WRITE);
       if(myFile){
         myFile.println(SDString);
         myFile.close();
       }else{
-//        Serial.println("failed to write.");
+        Serial.println("failed to write.");
       }
     }
   }
@@ -248,7 +248,7 @@ double avergearray(int* arr, int number){
   double avg;
   long amount=0;
   if(number<=0){
-//    Serial.println("Error number for the array to avraging!/n");
+    Serial.println("Error number for the array to avraging!/n");
     return 0;
   }
   if(number<5){   //less than 5, calculated directly statistics
